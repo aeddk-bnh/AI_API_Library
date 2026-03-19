@@ -32,11 +32,22 @@ export interface GeminiWebClientOptions {
 export interface SendOptions {
   newChat?: boolean;
   timeoutMs?: number;
+  model?: string;
 }
 
 export type GeminiResponseKind = "text" | "image" | "video" | "mixed";
 export type GeminiMediaKind = "image" | "video";
 export type GeminiMediaRenderer = "element" | "canvas";
+export type GeminiKnownModelId = "fast" | "thinking" | "pro";
+
+export interface GeminiModelOption {
+  id: string;
+  label: string;
+  description: string | null;
+  enabled: boolean;
+  selected: boolean;
+  testId: string | null;
+}
 
 export interface GeminiMediaArchiveOptions {
   enabled?: boolean;

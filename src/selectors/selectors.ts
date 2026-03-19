@@ -6,6 +6,9 @@ export interface GeminiSelectorRegistry {
   appShell: string[];
   composer: string[];
   sendButton: string[];
+  modelPickerButton: string[];
+  modelPickerMenu: string[];
+  modelPickerOptions: string[];
   assistantMessages: string[];
   assistantMessageContents: string[];
   userMessages: string[];
@@ -47,6 +50,23 @@ export const defaultSelectors: GeminiSelectorRegistry = {
     'button[aria-label*="send" i]',
     'button[aria-label*="submit" i]',
     'button[data-test-id*="send" i]',
+  ],
+  modelPickerButton: [
+    'button[data-test-id="bard-mode-menu-button"]',
+    '[data-test-id="bard-mode-switcher"] button[aria-haspopup="menu"]',
+    '[data-test-id="bard-mode-switcher"] button',
+    'button[aria-label*="mode picker" i]',
+    'button[aria-label*="bộ chọn chế độ" i]',
+  ],
+  modelPickerMenu: [
+    '.mat-mdc-menu-panel.gds-mode-switch-menu[role="menu"]',
+    '[role="menu"].gds-mode-switch-menu',
+    '[data-test-id="desktop-nested-mode-menu"]',
+  ],
+  modelPickerOptions: [
+    'button[data-test-id^="bard-mode-option-"]',
+    '[role="menuitem"][data-mode-id]',
+    '[role="menuitem"].bard-mode-list-button',
   ],
   assistantMessages: [
     "model-response",

@@ -1,4 +1,6 @@
+import type { Page } from "playwright";
 import type {
+  GeminiModelOption,
   GeminiWebClientOptions,
   SendOptions,
   SendResult,
@@ -11,6 +13,7 @@ import {
   type ResolvedGeminiWebClientOptions,
 } from "../config/defaults";
 import { GeminiWebError, toGeminiWebError } from "../errors/GeminiWebError";
+import { ModelPicker } from "../model/ModelPicker";
 import { GeminiNavigator } from "../navigation/GeminiNavigator";
 import { PromptComposer } from "../prompt/PromptComposer";
 import { ResponseReader } from "../response/ResponseReader";
@@ -32,6 +35,7 @@ export class GeminiWebClient {
   private readonly authState: AuthState;
   private readonly waiters: Waiters;
   private readonly navigator: GeminiNavigator;
+  private readonly modelPicker: ModelPicker;
   private readonly promptComposer: PromptComposer;
   private readonly responseReader: ResponseReader;
   private readonly streamObserver: StreamObserver;
@@ -58,6 +62,11 @@ export class GeminiWebClient {
       this.waiters,
       defaultSelectors,
       this.options,
+      this.options.logger,
+    );
+    this.modelPicker = new ModelPicker(
+      defaultSelectors,
+      this.options.pollIntervalMs,
       this.options.logger,
     );
     this.promptComposer = new PromptComposer(
@@ -172,6 +181,56 @@ export class GeminiWebClient {
     });
   }
 
+  async getSelectedModel(
+    timeoutMs = this.options.defaultTimeoutMs,
+  ): Promise<GeminiModelOption | null> {
+    return this.operationLock.runExclusive(async () => {
+      await this.init();
+      const page = await this.navigator.ensureReady(timeoutMs);
+      return this.modelPicker.getSelectedModel(page, timeoutMs);
+    });
+  }
+
+  async listModels(
+    timeoutMs = this.options.defaultTimeoutMs,
+  ): Promise<GeminiModelOption[]> {
+    return this.operationLock.runExclusive(async () => {
+      await this.init();
+      const page = await this.navigator.ensureReady(timeoutMs);
+      return this.modelPicker.listModels(page, timeoutMs);
+    });
+  }
+
+  async selectModel(
+    model: string,
+    timeoutMs = this.options.defaultTimeoutMs,
+  ): Promise<GeminiModelOption> {
+    return this.operationLock.runExclusive(async () => {
+      await this.init();
+      const context = createRequestContext(this.options.defaultTimeoutMs, {
+        timeoutMs,
+        model,
+      });
+
+      try {
+        return await this.retryPolicy.run(
+          async () => {
+            const page = await this.navigator.ensureReady(timeoutMs);
+            return this.modelPicker.ensureSelected(page, model, timeoutMs);
+          },
+          {
+            phase: "request",
+            onRetry: async () => {
+              await this.recoverPage();
+            },
+          },
+        );
+      } catch (error) {
+        throw await this.decorateError(error, context);
+      }
+    });
+  }
+
   async close(): Promise<void> {
     await this.operationLock.runExclusive(async () => {
       await this.session.close();
@@ -196,11 +255,10 @@ export class GeminiWebClient {
     log(this.options.logger, "info", "request_started", {
       requestId: context.requestId,
       newChat: context.newChat,
+      ...(context.model ? { model: context.model } : {}),
     });
 
-    const page = context.newChat
-      ? await this.navigator.startNewChat(context.timeoutMs)
-      : await this.navigator.ensureReady(context.timeoutMs);
+    const page = await this.preparePage(context);
 
     const submission = await this.promptComposer.sendPrompt(page, prompt, context);
     const response = await this.responseReader.waitForFinalResponse(page, {
@@ -236,11 +294,10 @@ export class GeminiWebClient {
       requestId: context.requestId,
       newChat: context.newChat,
       stream: true,
+      ...(context.model ? { model: context.model } : {}),
     });
 
-    const page = context.newChat
-      ? await this.navigator.startNewChat(context.timeoutMs)
-      : await this.navigator.ensureReady(context.timeoutMs);
+    const page = await this.preparePage(context);
 
     const submission = await this.promptComposer.sendPrompt(page, prompt, context);
     const response = await this.streamObserver.streamResponse(page, {
@@ -266,6 +323,18 @@ export class GeminiWebClient {
       completedAt: response.completedAt,
       ...(archive ? { archive } : {}),
     };
+  }
+
+  private async preparePage(context: RequestContext): Promise<Page> {
+    const page = context.newChat
+      ? await this.navigator.startNewChat(context.timeoutMs)
+      : await this.navigator.ensureReady(context.timeoutMs);
+
+    if (context.model) {
+      await this.modelPicker.ensureSelected(page, context.model, context.timeoutMs);
+    }
+
+    return page;
   }
 
   private async archiveResponse(

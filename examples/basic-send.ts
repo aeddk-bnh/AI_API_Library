@@ -1,8 +1,9 @@
 import { ConsoleLogger, createGeminiWebClient } from "../src";
-import { readBooleanEnv, resolveUserDataDir } from "./helpers";
+import { readBooleanEnv, readStringEnv, resolveUserDataDir } from "./helpers";
 
 async function main(): Promise<void> {
   const userDataDir = resolveUserDataDir(".profiles/guest");
+  const model = readStringEnv("GEMINI_MODEL", "");
 
   const client = await createGeminiWebClient({
     userDataDir,
@@ -14,6 +15,7 @@ async function main(): Promise<void> {
     const result = await client.send("Reply with exactly: PONG", {
       newChat: true,
       timeoutMs: 420_000,
+      ...(model ? { model } : {}),
     });
 
     if (result.text) {

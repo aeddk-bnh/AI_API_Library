@@ -12,6 +12,6 @@ export function createRequestContext(
     startedAt: new Date().toISOString(),
     timeoutMs: options?.timeoutMs ?? defaultTimeoutMs,
     newChat: options?.newChat ?? false,
+    ...(options?.model ? { model: options.model } : {}),
   };
 }
-

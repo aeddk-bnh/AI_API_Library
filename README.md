@@ -147,6 +147,16 @@ export interface GeminiWebClientOptions {
 export interface SendOptions {
   newChat?: boolean;
   timeoutMs?: number;
+  model?: string;
+}
+
+export interface GeminiModelOption {
+  id: string;
+  label: string;
+  description: string | null;
+  enabled: boolean;
+  selected: boolean;
+  testId: string | null;
 }
 
 export type GeminiResponseKind = "text" | "image" | "video" | "mixed";
@@ -214,6 +224,20 @@ console.log(result.archive?.manifestPath);
 await client.close();
 ```
 
+Neu muon chon model truoc khi gui prompt:
+
+```ts
+const models = await client.listModels();
+console.log(models);
+
+await client.selectModel("thinking");
+
+const result = await client.send("Giai thich event loop", {
+  newChat: true,
+  model: "thinking",
+});
+```
+
 `result.text` van duoc giu de tuong thich nguoc. Neu Gemini tra ve media-only, `text` co the rong nhung `kind` va `media` van cho biet ro response la `image`, `video`, hay `mixed`.
 
 Mac dinh, neu response co media, thu vien se luu them:
@@ -254,6 +278,7 @@ Bien moi truong:
 
 - `GEMINI_USER_DATA_DIR`: thu muc profile Playwright/Chromium da dang nhap.
 - `GEMINI_HEADLESS`: `true/false` cho example scripts.
+- `GEMINI_MODEL`: model mac dinh cho `basic-send` va `chat-cli`, vi du `fast`, `thinking`, `pro`.
 - `GEMINI_BROWSER_CHANNEL`: browser channel cho login/bootstrap, nen uu tien `chrome`.
 - `GEMINI_PROBE_PROMPT`: prompt dung cho `inspect:dom`.
 - `GEMINI_BOOTSTRAP_TIMEOUT_MS`: timeout cho bootstrap login.

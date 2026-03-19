@@ -5,11 +5,13 @@ import {
   ConsoleLogger,
   createGeminiWebClient,
   type GeminiMediaItem,
+  type GeminiModelOption,
   type SendResult,
 } from "../src";
 import {
   readBooleanEnv,
   readNumberEnv,
+  readStringEnv,
   resolveUserDataDir,
 } from "./helpers";
 
@@ -20,6 +22,7 @@ async function main(): Promise<void> {
   const userDataDir = resolveUserDataDir(".profiles/chat-cli");
   const timeoutMs = readNumberEnv("GEMINI_TIMEOUT_MS", 420_000);
   const headless = readBooleanEnv("GEMINI_HEADLESS", true);
+  const model = readStringEnv("GEMINI_MODEL", "");
 
   const client = await createGeminiWebClient({
     userDataDir,
@@ -33,6 +36,7 @@ async function main(): Promise<void> {
         streamMode,
         timeoutMs,
         newChat: true,
+        ...(model ? { model } : {}),
       });
       return;
     }
@@ -40,6 +44,7 @@ async function main(): Promise<void> {
     await runInteractiveChat(client, {
       streamMode,
       timeoutMs,
+      ...(model ? { model } : {}),
     });
   } finally {
     await client.close();
@@ -51,13 +56,15 @@ async function runInteractiveChat(
   options: {
     streamMode: boolean;
     timeoutMs: number;
+    model?: string;
   },
 ): Promise<void> {
   const readline = createInterface({ input, output });
   let nextPromptStartsNewChat = true;
   let streamMode = options.streamMode;
+  let selectedModel = options.model;
 
-  printHelp(streamMode, options.timeoutMs);
+  printHelp(streamMode, options.timeoutMs, selectedModel);
 
   try {
     while (true) {
@@ -73,7 +80,7 @@ async function runInteractiveChat(
       }
 
       if (prompt === "/help") {
-        printHelp(streamMode, options.timeoutMs);
+        printHelp(streamMode, options.timeoutMs, selectedModel);
         continue;
       }
 
@@ -89,11 +96,42 @@ async function runInteractiveChat(
         continue;
       }
 
+      if (prompt === "/models") {
+        const models = await client.listModels(options.timeoutMs);
+        output.write(`${formatModelList(models)}\n`);
+        continue;
+      }
+
+      if (prompt === "/model") {
+        const currentModel = await client.getSelectedModel(options.timeoutMs);
+        output.write(
+          currentModel
+            ? `Current model: ${currentModel.label} (${currentModel.id})\n`
+            : "Model picker is not available in the current Gemini UI.\n",
+        );
+        continue;
+      }
+
+      if (prompt.startsWith("/model ")) {
+        const requestedModel = prompt.slice("/model ".length).trim();
+
+        if (!requestedModel) {
+          output.write("Usage: /model <name>\n");
+          continue;
+        }
+
+        const model = await client.selectModel(requestedModel, options.timeoutMs);
+        selectedModel = model.id;
+        output.write(`Model is now ${model.label} (${model.id}).\n`);
+        continue;
+      }
+
       try {
         await askOnce(client, prompt, {
           streamMode,
           timeoutMs: options.timeoutMs,
           newChat: nextPromptStartsNewChat,
+          ...(selectedModel ? { model: selectedModel } : {}),
         });
         nextPromptStartsNewChat = false;
       } catch (error) {
@@ -112,6 +150,7 @@ async function askOnce(
     streamMode: boolean;
     timeoutMs: number;
     newChat: boolean;
+    model?: string;
   },
 ): Promise<void> {
   output.write("\nGemini> ");
@@ -130,6 +169,7 @@ async function askOnce(
       {
         newChat: options.newChat,
         timeoutMs: options.timeoutMs,
+        ...(options.model ? { model: options.model } : {}),
       },
     );
 
@@ -150,6 +190,7 @@ async function askOnce(
   const result = await client.send(prompt, {
     newChat: options.newChat,
     timeoutMs: options.timeoutMs,
+    ...(options.model ? { model: options.model } : {}),
   });
 
   output.write(`${formatResultBody(result)}\n`);
@@ -159,10 +200,15 @@ async function askOnce(
   }
 }
 
-function printHelp(streamMode: boolean, timeoutMs: number): void {
+function printHelp(
+  streamMode: boolean,
+  timeoutMs: number,
+  selectedModel?: string,
+): void {
   output.write("Gemini CLI is ready.\n");
-  output.write("Commands: /new, /stream, /help, /exit\n");
+  output.write("Commands: /new, /stream, /models, /model, /help, /exit\n");
   output.write(`Stream mode: ${streamMode ? "ON" : "OFF"}\n`);
+  output.write(`Model: ${selectedModel ?? "(current Gemini default)"}\n`);
   output.write(`Timeout: ${timeoutMs}ms (override with GEMINI_TIMEOUT_MS)\n`);
 }
 
@@ -200,6 +246,24 @@ function formatMediaSummary(media: GeminiMediaItem[]): string {
   });
 
   return lines.join("\n");
+}
+
+function formatModelList(models: GeminiModelOption[]): string {
+  if (models.length === 0) {
+    return "No Gemini models were found.";
+  }
+
+  return models
+    .map((model) => {
+      const status = model.selected
+        ? "selected"
+        : model.enabled
+          ? "available"
+          : "unavailable";
+      const description = model.description ? ` - ${model.description}` : "";
+      return `${model.label} (${model.id}) [${status}]${description}`;
+    })
+    .join("\n");
 }
 
 main().catch((error) => {

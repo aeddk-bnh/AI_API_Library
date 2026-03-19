@@ -19,6 +19,8 @@ Trong trang thai hien tai, thu vien da dung duoc cho:
 - guest mode
 - `send()`
 - `sendStream()`
+- `listModels()`
+- `selectModel()`
 - chat terminal example
 - bootstrap login thu cong de tao profile dang nhap that
 
@@ -88,6 +90,7 @@ const client = await createGeminiWebClient({
 const result = await client.send("Reply with exactly: PONG", {
   newChat: true,
   timeoutMs: 420_000,
+  model: "fast",
 });
 
 console.log(result.text);
@@ -106,6 +109,41 @@ console.log(result.archive?.manifestPath);
 - `archive`: thong tin noi luu prompt va media neu response co media
 
 Voi request tao anh hoac video, nen de timeout tu `420_000` tro len. Neu tao video mat lau hon, ban co the day len `900_000`.
+
+## Doc va chon model
+
+Ban co the hoi thu vien xem Gemini dang co nhung model nao:
+
+```ts
+const models = await client.listModels();
+console.log(models);
+```
+
+Mau ket qua:
+
+- `fast`: thuong la model mac dinh, tra loi nhanh
+- `thinking`: model suy luan, co the bi khoa theo mode/tai khoan
+- `pro`: model pro, co the bi khoa theo mode/tai khoan
+
+De chon model truoc khi gui:
+
+```ts
+await client.selectModel("thinking");
+
+const result = await client.send("Giai thich TCP handshake", {
+  newChat: true,
+  model: "thinking",
+  timeoutMs: 420_000,
+});
+```
+
+`model` la match theo visible label va alias thong dung, nen cac gia tri thuc te nen uu tien la:
+
+- `fast`
+- `thinking`
+- `pro`
+
+Neu model ton tai nhung dang bi khoa, thu vien se nem `GeminiWebError` voi `code = "MODEL_UNAVAILABLE"`.
 
 Khi `result.archive` co gia tri, thu vien da luu:
 
@@ -365,6 +403,12 @@ npm run chat
 npm run bootstrap:login
 npm run inspect:dom
 ```
+
+`chat-cli` hien co them:
+
+- `/models`: liet ke model va trang thai hien tai
+- `/model`: xem model dang duoc chon
+- `/model <name>`: chon model cho cac prompt tiep theo
 
 ## Ket luan
 

@@ -113,6 +113,7 @@ Day la noi de vo nhat va cung la noi quan trong nhat de maintain.
 Tat ca selector dang duoc tap trung tai day:
 
 - composer
+- model picker
 - send button
 - stop button
 - user message
@@ -131,11 +132,24 @@ Neu Gemini doi DOM, uu tien sua file nay truoc.
 - Co gang tai file image/video neu media co URL
 - Khong lam fail request chinh neu archive gap loi
 
+### 5. Model picker
+
+[ModelPicker.ts](/d:/ask_ai/src/model/ModelPicker.ts)
+
+- Doc model dang duoc chon o pill ben phai composer
+- Mo model menu va liet ke cac option co san
+- Match alias nhu `fast`, `thinking`, `pro`
+- Bao loi ro rang neu model ton tai nhung dang bi khoa
+
+Neu Gemini doi model menu hoac doi `data-test-id` cua model option, day la module can sua tiep theo sau `selectors.ts`.
+
 ## DOM that dang duoc dung
 
 Tu lan inspect gan day, cac marker huu ich nhat la:
 
 - composer: `[aria-label="Enter a prompt for Gemini"][contenteditable="true"]`
+- model picker button: `button[data-test-id="bard-mode-menu-button"]`
+- model picker option: `button[data-test-id^="bard-mode-option-"]`
 - send button: `button[aria-label="Send message"]`
 - stop button: `button[aria-label="Stop response"]`
 - user message: `user-query`

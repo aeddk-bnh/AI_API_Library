@@ -6,6 +6,7 @@ export interface RequestContext {
   startedAt: string;
   timeoutMs: number;
   newChat: boolean;
+  model?: string;
 }
 
 export interface PromptSubmission {
