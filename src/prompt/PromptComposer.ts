@@ -35,6 +35,8 @@ export class PromptComposer {
       page,
       this.selectors.assistantMessages,
     );
+    const assistantSnapshotBefore =
+      await this.waiters.getLatestAssistantContent(page);
     const userCountBefore = await countMatches(page, this.selectors.userMessages);
 
     await this.writePrompt(page, composer.locator, prompt);
@@ -55,6 +57,7 @@ export class PromptComposer {
       requestId: context.requestId,
       startedAt: context.startedAt,
       assistantCountBefore,
+      assistantSnapshotBefore,
       userCountBefore,
       promptLength: prompt.length,
     };

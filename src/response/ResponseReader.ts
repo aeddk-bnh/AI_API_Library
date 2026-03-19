@@ -40,11 +40,13 @@ export class ResponseReader {
   ): Promise<FinalResponseResult> {
     await this.waiters.waitForAssistantResponseStart(page, {
       assistantCountBefore: input.submission.assistantCountBefore,
+      assistantSnapshotBefore: input.submission.assistantSnapshotBefore,
       timeoutMs: input.timeoutMs,
     });
 
     const content = await this.waiters.waitForAssistantResponseComplete(page, {
       assistantCountBefore: input.submission.assistantCountBefore,
+      assistantSnapshotBefore: input.submission.assistantSnapshotBefore,
       timeoutMs: input.timeoutMs,
     });
     if (!content.hasContent || !content.kind) {
@@ -56,7 +58,10 @@ export class ResponseReader {
     }
 
     const assistantCount = await countMatches(page, this.selectors.assistantMessages);
-    if (assistantCount <= input.submission.assistantCountBefore) {
+    const responseChanged =
+      assistantCount > input.submission.assistantCountBefore ||
+      content.signature !== input.submission.assistantSnapshotBefore.signature;
+    if (!responseChanged) {
       throw new GeminiWebError("Could not locate a new assistant response", {
         code: "RESPONSE_NOT_FOUND",
         phase: "response_read",

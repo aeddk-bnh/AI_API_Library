@@ -3,7 +3,10 @@ import { expect, test } from "@playwright/test";
 import { resolveClientOptions } from "../../src/config/defaults";
 import { ResponseReader } from "../../src/response/ResponseReader";
 import { StreamObserver } from "../../src/response/StreamObserver";
-import { readLatestAssistantContent } from "../../src/response/readLatestAssistantContent";
+import {
+  buildAssistantContentSnapshot,
+  readLatestAssistantContent,
+} from "../../src/response/readLatestAssistantContent";
 import { defaultSelectors } from "../../src/selectors/selectors";
 import { Waiters } from "../../src/stability/Waiters";
 import { NoopLogger } from "../../src/telemetry/Logger";
@@ -28,13 +31,39 @@ function createWaiters(stableWindowMs = 25): Waiters {
   );
 }
 
-function createSubmission(): PromptSubmission {
+function createStreamObserver(
+  options: {
+    pollIntervalMs?: number;
+    stableWindowMs?: number;
+  } = {},
+): StreamObserver {
+  return new StreamObserver(
+    defaultSelectors,
+    createWaiters(options.stableWindowMs ?? 25),
+    resolveClientOptions({
+      userDataDir: ".profiles/test-dom",
+      headless: true,
+      pollIntervalMs: options.pollIntervalMs ?? 10,
+      stableWindowMs: options.stableWindowMs ?? 25,
+      logger,
+      screenshotsOnError: false,
+      artifactsDir: "playwright-artifacts/test-dom",
+    }),
+    logger,
+  );
+}
+
+function createSubmission(
+  overrides: Partial<PromptSubmission> = {},
+): PromptSubmission {
   return {
     requestId: "req_test",
     startedAt: new Date().toISOString(),
     assistantCountBefore: 0,
+    assistantSnapshotBefore: buildAssistantContentSnapshot("", []),
     userCountBefore: 0,
     promptLength: 12,
+    ...overrides,
   };
 }
 
@@ -115,20 +144,7 @@ test("stream observer completes mixed replies and emits final media metadata", a
     </model-response>
   `);
 
-  const observer = new StreamObserver(
-    defaultSelectors,
-    createWaiters(),
-    resolveClientOptions({
-      userDataDir: ".profiles/test-dom",
-      headless: true,
-      pollIntervalMs: 10,
-      stableWindowMs: 25,
-      logger,
-      screenshotsOnError: false,
-      artifactsDir: "playwright-artifacts/test-dom",
-    }),
-    logger,
-  );
+  const observer = createStreamObserver();
   const chunks: StreamChunk[] = [];
   const result = await observer.streamResponse(page, {
     submission: createSubmission(),
@@ -145,4 +161,178 @@ test("stream observer completes mixed replies and emits final media metadata", a
     done: true,
     kind: "mixed",
   });
+});
+
+test("response reader accepts updated content without a new assistant message", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <model-response>
+      <message-content>
+        <div aria-live="polite" aria-busy="false">
+          <p>Old answer</p>
+        </div>
+      </message-content>
+    </model-response>
+    <button class="send-button stop" aria-label="Stop response"></button>
+  `);
+
+  const baseline = buildAssistantContentSnapshot("Old answer", []);
+  const reader = new ResponseReader(defaultSelectors, createWaiters(), logger);
+
+  await page.evaluate(() => {
+    window.setTimeout(() => {
+      const content = document.querySelector("model-response message-content");
+      if (content) {
+        content.innerHTML = `
+          <div aria-live="polite" aria-busy="false">
+            <p>New answer</p>
+          </div>
+        `;
+      }
+
+      document.querySelector('button[aria-label="Stop response"]')?.remove();
+    }, 50);
+  });
+
+  const result = await reader.waitForFinalResponse(page, {
+    submission: createSubmission({
+      assistantCountBefore: 1,
+      assistantSnapshotBefore: baseline,
+    }),
+    timeoutMs: 1_000,
+  });
+
+  expect(result.kind).toBe("text");
+  expect(result.text).toContain("New answer");
+});
+
+test("stream observer ignores baseline text and completes updated existing response", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <model-response>
+      <message-content>
+        <div aria-live="polite" aria-busy="false">
+          <p>Old answer</p>
+        </div>
+      </message-content>
+    </model-response>
+    <button class="send-button stop" aria-label="Stop response"></button>
+  `);
+
+  const observer = createStreamObserver();
+  const chunks: StreamChunk[] = [];
+
+  await page.evaluate(() => {
+    window.setTimeout(() => {
+      const content = document.querySelector("model-response message-content");
+      if (content) {
+        content.innerHTML = `
+          <div aria-live="polite" aria-busy="false">
+            <p>Updated answer</p>
+            <img src="https://example.com/updated.png" alt="Updated image">
+          </div>
+        `;
+      }
+
+      document.querySelector('button[aria-label="Stop response"]')?.remove();
+    }, 50);
+  });
+
+  const result = await observer.streamResponse(page, {
+    submission: createSubmission({
+      assistantCountBefore: 1,
+      assistantSnapshotBefore: buildAssistantContentSnapshot("Old answer", []),
+    }),
+    timeoutMs: 1_000,
+    onChunk: (chunk) => {
+      chunks.push(chunk);
+    },
+  });
+
+  expect(result.kind).toBe("mixed");
+  expect(result.text).toContain("Updated answer");
+  expect(result.media).toHaveLength(1);
+  expect(chunks.some((chunk) => chunk.text.includes("Old answer"))).toBeFalsy();
+  expect(chunks.at(-1)).toMatchObject({
+    done: true,
+    kind: "mixed",
+  });
+});
+
+test("stream observer emits multiple text deltas for rapid DOM updates", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <model-response>
+      <message-content>
+        <div aria-live="polite" aria-busy="false"></div>
+      </message-content>
+    </model-response>
+    <button class="send-button stop" aria-label="Stop response"></button>
+  `);
+
+  const observer = createStreamObserver({
+    pollIntervalMs: 200,
+    stableWindowMs: 25,
+  });
+  const chunks: StreamChunk[] = [];
+
+  await page.evaluate(() => {
+    window.setTimeout(() => {
+      const content = document.querySelector("model-response message-content");
+      if (content) {
+        content.innerHTML = `
+          <div aria-live="polite" aria-busy="false">
+            <p>Part one</p>
+          </div>
+        `;
+      }
+    }, 200);
+
+    window.setTimeout(() => {
+      const content = document.querySelector("model-response message-content");
+      if (content) {
+        content.innerHTML = `
+          <div aria-live="polite" aria-busy="false">
+            <p>Part one. Part two</p>
+          </div>
+        `;
+      }
+    }, 320);
+
+    window.setTimeout(() => {
+      const content = document.querySelector("model-response message-content");
+      if (content) {
+        content.innerHTML = `
+          <div aria-live="polite" aria-busy="false">
+            <p>Part one. Part two. Part three</p>
+          </div>
+        `;
+      }
+    }, 440);
+
+    window.setTimeout(() => {
+      document.querySelector('button[aria-label="Stop response"]')?.remove();
+    }, 560);
+  });
+
+  const result = await observer.streamResponse(page, {
+    submission: createSubmission({
+      assistantCountBefore: 1,
+      assistantSnapshotBefore: buildAssistantContentSnapshot("", []),
+    }),
+    timeoutMs: 2_000,
+    onChunk: (chunk) => {
+      chunks.push(chunk);
+    },
+  });
+
+  const deltas = chunks
+    .filter((chunk) => !chunk.done && chunk.delta.length > 0)
+    .map((chunk) => chunk.delta);
+
+  expect(result.text).toContain("Part one. Part two. Part three");
+  expect(deltas.length).toBeGreaterThanOrEqual(2);
 });

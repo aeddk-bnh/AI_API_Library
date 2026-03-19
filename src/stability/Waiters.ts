@@ -26,6 +26,7 @@ export interface SubmissionAcceptedInput {
 
 export interface AssistantResponseInput {
   assistantCountBefore: number;
+  assistantSnapshotBefore?: AssistantContentSnapshot;
   timeoutMs: number;
 }
 
@@ -120,20 +121,28 @@ export class Waiters {
     input: AssistantResponseInput,
   ): Promise<void> {
     const deadline = Date.now() + input.timeoutMs;
+    const baselineSnapshot =
+      input.assistantSnapshotBefore ?? createEmptyAssistantContentSnapshot();
 
     while (Date.now() <= deadline) {
       const assistantCount = await countMatches(
         page,
         this.selectors.assistantMessages,
       );
+      const latestSnapshot = await this.getLatestAssistantContent(page);
+      const responseChanged =
+        assistantCount > input.assistantCountBefore ||
+        latestSnapshot.signature !== baselineSnapshot.signature;
 
       if (
-        assistantCount > input.assistantCountBefore ||
+        responseChanged ||
         (await this.isGenerationInProgress(page))
       ) {
         log(this.logger, "debug", "response_started", {
           assistantCountBefore: input.assistantCountBefore,
           assistantCount,
+          signatureChanged:
+            latestSnapshot.signature !== baselineSnapshot.signature,
         });
 
         return;
@@ -154,22 +163,24 @@ export class Waiters {
     input: AssistantResponseInput,
   ): Promise<AssistantContentSnapshot> {
     const deadline = Date.now() + input.timeoutMs;
-    let lastSignature = "";
+    const baselineSnapshot =
+      input.assistantSnapshotBefore ?? createEmptyAssistantContentSnapshot();
+    let lastSignature = baselineSnapshot.signature;
     let stableSince = 0;
-    let latestSnapshot = createEmptyAssistantContentSnapshot();
+    let latestSnapshot = baselineSnapshot;
 
     while (Date.now() <= deadline) {
       const assistantCount = await countMatches(
         page,
         this.selectors.assistantMessages,
       );
-      const hasNewAssistantMessage =
-        assistantCount > input.assistantCountBefore;
-      latestSnapshot = hasNewAssistantMessage
-        ? await this.getLatestAssistantContent(page)
-        : createEmptyAssistantContentSnapshot();
+      const hasNewAssistantMessage = assistantCount > input.assistantCountBefore;
+      latestSnapshot = await this.getLatestAssistantContent(page);
       const inProgress = await this.isGenerationInProgress(page);
       const currentSignature = latestSnapshot.signature;
+      const responseChanged =
+        hasNewAssistantMessage ||
+        currentSignature !== baselineSnapshot.signature;
 
       if (currentSignature !== lastSignature) {
         lastSignature = currentSignature;
@@ -179,7 +190,7 @@ export class Waiters {
       }
 
       if (
-        hasNewAssistantMessage &&
+        responseChanged &&
         latestSnapshot.hasContent &&
         !inProgress &&
         stableSince > 0 &&
