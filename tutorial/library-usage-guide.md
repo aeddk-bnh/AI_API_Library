@@ -165,10 +165,13 @@ Neu ban muon su dung session dang nhap Google that:
 
 ```bash
 set GEMINI_USER_DATA_DIR=.profiles/default
+set GEMINI_BROWSER_CHANNEL=chrome
 npm run bootstrap:login
 ```
 
 Sau khi login xong, app cua ban chi can tro den cung `userDataDir`.
+
+De giam rui ro bi Google chan sign-in trong flow bootstrap, nen uu tien Google Chrome channel thay vi Chromium bundle khi dang nhap that.
 
 ## Example cho script don gian
 
@@ -324,4 +327,3 @@ Neu ban muon dung nhanh nhat, hay bat dau bang:
 2. Tao 1 client
 3. Goi `send()` voi `newChat: true`
 4. Them `sendStream()` neu can stream text
-

@@ -40,6 +40,7 @@ npm run chat
 
 ```bash
 set GEMINI_USER_DATA_DIR=.profiles/default
+set GEMINI_BROWSER_CHANNEL=chrome
 npm run bootstrap:login
 ```
 
@@ -181,6 +182,7 @@ Bien moi truong:
 
 - `GEMINI_USER_DATA_DIR`: thu muc profile Playwright/Chromium da dang nhap.
 - `GEMINI_HEADLESS`: `true/false` cho example scripts.
+- `GEMINI_BROWSER_CHANNEL`: browser channel cho login/bootstrap, nen uu tien `chrome`.
 - `GEMINI_PROBE_PROMPT`: prompt dung cho `inspect:dom`.
 - `GEMINI_BOOTSTRAP_TIMEOUT_MS`: timeout cho bootstrap login.
 - `RUN_GEMINI_WEB_TESTS=1`: bat integration tests that.

@@ -33,3 +33,11 @@ export function readNumberEnv(
   const parsed = Number(rawValue);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+
+export function readStringEnv(
+  key: string,
+  fallback: string,
+): string {
+  const rawValue = process.env[key];
+  return rawValue && rawValue.trim().length > 0 ? rawValue.trim() : fallback;
+}
