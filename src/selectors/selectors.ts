@@ -32,10 +32,13 @@ export const defaultSelectors: GeminiSelectorRegistry = {
   ],
   composer: [
     '[aria-label="Enter a prompt for Gemini"][contenteditable="true"]',
+    '[aria-label="Nhập câu lệnh cho Gemini"][contenteditable="true"]',
+    '[role="textbox"][aria-label*="gemini" i][contenteditable="true"]',
     '[role="textbox"][aria-label*="prompt" i][contenteditable="true"]',
+    '[contenteditable="true"][role="textbox"]',
+    '.ql-editor[contenteditable="true"][role="textbox"]',
     'textarea[aria-label*="message" i]',
     'textarea',
-    '[contenteditable="true"][role="textbox"]',
     '[contenteditable="true"]',
   ],
   sendButton: [

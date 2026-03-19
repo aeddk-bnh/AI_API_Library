@@ -119,6 +119,10 @@ Luot goi co ban:
 7. Response reader hoac stream observer theo doi ket qua.
 8. Client chuan hoa du lieu va tra ve cho caller.
 
+Luu y ve timeout:
+
+- Mac dinh cua thu vien nen duoc xem la phu hop cho media generation, nhung voi video hoac request nang ban van nen tang `timeoutMs` len `900_000` neu can.
+
 ## API thu vien du kien
 
 API muc tieu cho MVP:
@@ -133,6 +137,11 @@ export interface GeminiWebClientOptions {
   stableWindowMs?: number;
   maxRetries?: number;
   screenshotsOnError?: boolean;
+  mediaArchive?: {
+    enabled?: boolean;
+    directory?: string;
+    downloadMedia?: boolean;
+  };
 }
 
 export interface SendOptions {
@@ -140,8 +149,40 @@ export interface SendOptions {
   timeoutMs?: number;
 }
 
+export type GeminiResponseKind = "text" | "image" | "video" | "mixed";
+
+export interface GeminiMediaItem {
+  kind: "image" | "video";
+  url: string | null;
+  alt: string | null;
+  posterUrl: string | null;
+  renderer: "element" | "canvas";
+  width: number | null;
+  height: number | null;
+}
+
+export interface GeminiMediaArchiveRecord {
+  directory: string;
+  manifestPath: string;
+  promptPath: string;
+  responseTextPath: string | null;
+  responseHtmlPath: string | null;
+  responseScreenshotPath: string | null;
+  mediaFiles: Array<{
+    mediaIndex: number;
+    kind: "image" | "video";
+    sourceUrl: string | null;
+    savedPath: string | null;
+    contentType: string | null;
+    error?: string;
+  }>;
+}
+
 export interface SendResult {
   text: string;
+  kind: GeminiResponseKind;
+  media: GeminiMediaItem[];
+  archive?: GeminiMediaArchiveRecord;
   requestId: string;
   startedAt: string;
   completedAt: string;
@@ -151,6 +192,8 @@ export interface StreamChunk {
   text: string;
   delta: string;
   done: boolean;
+  kind: GeminiResponseKind;
+  media: GeminiMediaItem[];
 }
 ```
 
@@ -164,8 +207,37 @@ const client = await createGeminiWebClient({
 
 const result = await client.send("Tom tat bai viet nay");
 console.log(result.text);
+console.log(result.kind);
+console.log(result.media);
+console.log(result.archive?.manifestPath);
 
 await client.close();
+```
+
+`result.text` van duoc giu de tuong thich nguoc. Neu Gemini tra ve media-only, `text` co the rong nhung `kind` va `media` van cho biet ro response la `image`, `video`, hay `mixed`.
+
+Mac dinh, neu response co media, thu vien se luu them:
+
+- `prompt.txt`
+- `response.txt` neu co text
+- `response.html`
+- `response.png`
+- `manifest.json`
+- cac file media tai duoc
+
+Thu muc mac dinh la `playwright-artifacts/media-responses/`.
+
+Neu muon tat hoac doi thu muc luu:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/default",
+  mediaArchive: {
+    enabled: true,
+    directory: "./my-media-archive",
+    downloadMedia: true,
+  },
+});
 ```
 
 ## Scripts
@@ -195,6 +267,8 @@ Bien moi truong:
 +-- docs/
 |   +-- technical-design.md
 +-- src/
+|   +-- archive/
+|   |   +-- ResponseArchive.ts
 |   +-- index.ts
 |   +-- client/
 |   |   +-- GeminiWebClient.ts

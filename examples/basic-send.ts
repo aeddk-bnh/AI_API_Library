@@ -13,10 +13,26 @@ async function main(): Promise<void> {
   try {
     const result = await client.send("Reply with exactly: PONG", {
       newChat: true,
-      timeoutMs: 90_000,
+      timeoutMs: 420_000,
     });
 
-    console.log(result.text);
+    if (result.text) {
+      console.log(result.text);
+    }
+
+    if (result.media.length > 0) {
+      console.log(
+        JSON.stringify(
+          {
+            kind: result.kind,
+            media: result.media,
+            archive: result.archive,
+          },
+          null,
+          2,
+        ),
+      );
+    }
   } finally {
     await client.close();
   }
@@ -26,4 +42,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-

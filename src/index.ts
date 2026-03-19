@@ -2,6 +2,13 @@ export { GeminiWebClient, createGeminiWebClient } from "./client/GeminiWebClient
 export { ConsoleLogger, NoopLogger } from "./telemetry/Logger";
 export { GeminiWebError, isGeminiWebError } from "./errors/GeminiWebError";
 export type {
+  GeminiArchivedMediaFile,
+  GeminiMediaArchiveOptions,
+  GeminiMediaArchiveRecord,
+  GeminiMediaItem,
+  GeminiMediaKind,
+  GeminiMediaRenderer,
+  GeminiResponseKind,
   GeminiWebClientOptions,
   LoggerContext,
   LoggerLike,
@@ -9,4 +16,3 @@ export type {
   SendResult,
   StreamChunk,
 } from "./types/public";
-

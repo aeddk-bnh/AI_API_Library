@@ -5,6 +5,7 @@ import type {
   StreamChunk,
 } from "../types/public";
 
+import { ResponseArchive } from "../archive/ResponseArchive";
 import {
   resolveClientOptions,
   type ResolvedGeminiWebClientOptions,
@@ -36,6 +37,7 @@ export class GeminiWebClient {
   private readonly streamObserver: StreamObserver;
   private readonly retryPolicy: RetryPolicy;
   private readonly artifacts: Artifacts;
+  private readonly responseArchive: ResponseArchive;
   private readonly operationLock = new AsyncLock();
 
   private initializationPromise: Promise<this> | null = null;
@@ -80,6 +82,11 @@ export class GeminiWebClient {
       this.options.logger,
     );
     this.artifacts = new Artifacts(this.options, this.options.logger);
+    this.responseArchive = new ResponseArchive(
+      defaultSelectors,
+      this.options,
+      this.options.logger,
+    );
   }
 
   async init(): Promise<this> {
@@ -200,12 +207,23 @@ export class GeminiWebClient {
       submission,
       timeoutMs: context.timeoutMs,
     });
+    const archive = await this.archiveResponse(page, prompt, {
+      requestId: context.requestId,
+      text: response.text,
+      kind: response.kind,
+      media: response.media,
+      startedAt: context.startedAt,
+      completedAt: response.completedAt,
+    });
 
     return {
       requestId: context.requestId,
       text: response.text,
+      kind: response.kind,
+      media: response.media,
       startedAt: context.startedAt,
       completedAt: response.completedAt,
+      ...(archive ? { archive } : {}),
     };
   }
 
@@ -230,13 +248,45 @@ export class GeminiWebClient {
       timeoutMs: context.timeoutMs,
       onChunk,
     });
+    const archive = await this.archiveResponse(page, prompt, {
+      requestId: context.requestId,
+      text: response.text,
+      kind: response.kind,
+      media: response.media,
+      startedAt: context.startedAt,
+      completedAt: response.completedAt,
+    });
 
     return {
       requestId: context.requestId,
       text: response.text,
+      kind: response.kind,
+      media: response.media,
       startedAt: context.startedAt,
       completedAt: response.completedAt,
+      ...(archive ? { archive } : {}),
     };
+  }
+
+  private async archiveResponse(
+    page: Awaited<ReturnType<BrowserSession["getPage"]>>,
+    prompt: string,
+    result: SendResult,
+  ): Promise<SendResult["archive"]> {
+    try {
+      return await this.responseArchive.archiveMediaResponse({
+        page,
+        prompt,
+        result,
+      });
+    } catch (error) {
+      log(this.options.logger, "warn", "media_response_archive_failed", {
+        requestId: result.requestId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      return undefined;
+    }
   }
 
   private async recoverPage(): Promise<void> {

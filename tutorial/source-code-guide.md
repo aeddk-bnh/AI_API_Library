@@ -26,6 +26,7 @@ Hien tai project da co MVP chay that voi Gemini web o guest mode:
 
 ```text
 src/
+  archive/
   client/
   config/
   errors/
@@ -121,6 +122,15 @@ Tat ca selector dang duoc tap trung tai day:
 
 Neu Gemini doi DOM, uu tien sua file nay truoc.
 
+### 4. Response archive
+
+[ResponseArchive.ts](/d:/ask_ai/src/archive/ResponseArchive.ts)
+
+- Tu dong luu media response kem prompt da tao ra no
+- Ghi `manifest.json`, `prompt.txt`, `response.html`, `response.png`
+- Co gang tai file image/video neu media co URL
+- Khong lam fail request chinh neu archive gap loi
+
 ## DOM that dang duoc dung
 
 Tu lan inspect gan day, cac marker huu ich nhat la:
@@ -145,15 +155,21 @@ Snapshot DOM mau nam o:
 - Uu tien doc `message-content` nam ben trong `model-response`
 - Duoc dung chung cho ca non-stream va stream
 
+[readLatestAssistantContent.ts](/d:/ask_ai/src/response/readLatestAssistantContent.ts)
+
+- Doc response cuoi cung duoi dang snapshot co cau truc
+- Tra ve `text`, `media[]`, `kind`, `signature`
+- La nen tang de detect dung response `text-only`, `media-only`, va `mixed`
+
 [ResponseReader.ts](/d:/ask_ai/src/response/ResponseReader.ts)
 
 - Cho response hoan tat
-- Doc text cuoi cung
+- Doc snapshot cuoi cung
 - Chuan hoa output
 
 [StreamObserver.ts](/d:/ask_ai/src/response/StreamObserver.ts)
 
-- Theo doi text thay doi theo thoi gian
+- Theo doi snapshot `text + media` thay doi theo thoi gian
 - Tinh `delta`
 - Goi callback stream
 
@@ -280,4 +296,3 @@ Doc theo thu tu nay:
 4. [Waiters.ts](/d:/ask_ai/src/stability/Waiters.ts)
 5. [ResponseReader.ts](/d:/ask_ai/src/response/ResponseReader.ts)
 6. [StreamObserver.ts](/d:/ask_ai/src/response/StreamObserver.ts)
-

@@ -2,7 +2,11 @@ import type { Page } from "playwright";
 
 import type { GeminiSelectorRegistry } from "../selectors/selectors";
 import type { PromptSubmission } from "../types/internal";
-import type { LoggerLike } from "../types/public";
+import type {
+  GeminiMediaItem,
+  GeminiResponseKind,
+  LoggerLike,
+} from "../types/public";
 
 import { GeminiWebError } from "../errors/GeminiWebError";
 import { countMatches } from "../selectors/selectors";
@@ -18,6 +22,8 @@ export interface FinalResponseInput {
 
 export interface FinalResponseResult {
   text: string;
+  kind: GeminiResponseKind;
+  media: GeminiMediaItem[];
   completedAt: string;
 }
 
@@ -37,13 +43,11 @@ export class ResponseReader {
       timeoutMs: input.timeoutMs,
     });
 
-    await this.waiters.waitForAssistantResponseComplete(page, {
+    const content = await this.waiters.waitForAssistantResponseComplete(page, {
       assistantCountBefore: input.submission.assistantCountBefore,
       timeoutMs: input.timeoutMs,
     });
-
-    const text = await this.extractLatestAssistantText(page);
-    if (!text) {
+    if (!content.hasContent || !content.kind) {
       throw new GeminiWebError("Assistant response was empty", {
         code: "RESPONSE_NOT_FOUND",
         phase: "response_read",
@@ -61,13 +65,17 @@ export class ResponseReader {
     }
 
     const result = {
-      text,
+      text: content.text,
+      kind: content.kind,
+      media: content.media,
       completedAt: new Date().toISOString(),
     };
 
     log(this.logger, "info", "response_completed", {
       requestId: input.submission.requestId,
       textLength: result.text.length,
+      responseKind: result.kind,
+      mediaCount: result.media.length,
     });
 
     return result;

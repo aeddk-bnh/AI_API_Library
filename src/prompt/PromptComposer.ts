@@ -65,20 +65,154 @@ export class PromptComposer {
     locator: Locator,
     prompt: string,
   ): Promise<void> {
-    await locator.click();
+    let currentLocator = locator;
+    const maxAttempts = 4;
 
-    const tagName = await locator.evaluate((element) =>
-      element.tagName.toLowerCase(),
-    );
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const wrotePrompt = await this.tryWritePrompt(
+        page,
+        currentLocator,
+        prompt,
+      );
 
-    if (tagName === "textarea" || tagName === "input") {
-      await locator.fill(prompt);
-      return;
+      if (wrotePrompt) {
+        return;
+      }
+
+      if (attempt >= maxAttempts - 1) {
+        break;
+      }
+
+      await page.waitForTimeout(Math.min(this.pollIntervalMs, 250));
+      const refreshedComposer = await this.waiters.waitForComposerReady(
+        page,
+        5_000,
+      );
+      currentLocator = refreshedComposer.locator;
     }
 
-    await page.keyboard.press("Control+A").catch(() => undefined);
-    await page.keyboard.press("Backspace").catch(() => undefined);
-    await page.keyboard.insertText(prompt);
+    throw new GeminiWebError("Could not write prompt to composer", {
+      code: "COMPOSER_NOT_FOUND",
+      phase: "compose",
+      retryable: true,
+    });
+  }
+
+  private async tryWritePrompt(
+    page: Page,
+    locator: Locator,
+    prompt: string,
+  ): Promise<boolean> {
+    const targetKind = await locator
+      .evaluate((element) => ({
+        tagName: element.tagName.toLowerCase(),
+        isContentEditable:
+          element instanceof HTMLElement ? element.isContentEditable : false,
+      }))
+      .catch(() => null);
+
+    if (!targetKind) {
+      return false;
+    }
+
+    if (
+      targetKind.tagName === "textarea" ||
+      targetKind.tagName === "input"
+    ) {
+      const filled = await locator
+        .fill(prompt)
+        .then(() => true)
+        .catch(() => false);
+
+      if (!filled) {
+        return false;
+      }
+
+      return this.composerHasPrompt(locator, prompt);
+    }
+
+    if (targetKind.isContentEditable) {
+      const focused = await locator
+        .focus()
+        .then(() => true)
+        .catch(() => false);
+      const clicked = focused
+        ? true
+        : await locator
+            .click()
+            .then(() => true)
+            .catch(() => false);
+
+      if (!clicked) {
+        return false;
+      }
+
+      await page.keyboard.press("Control+A").catch(() => undefined);
+      await page.keyboard.press("Backspace").catch(() => undefined);
+
+      const inserted = await page.keyboard
+        .insertText(prompt)
+        .then(() => true)
+        .catch(() => false);
+
+      if (inserted && (await this.composerHasPrompt(locator, prompt))) {
+        return true;
+      }
+
+      const wroteByDom = await locator
+        .evaluate((element, value) => {
+          if (!(element instanceof HTMLElement) || !element.isContentEditable) {
+            return false;
+          }
+
+          element.focus();
+          element.textContent = value;
+          element.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              data: value,
+              inputType: "insertText",
+            }),
+          );
+          element.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }, prompt)
+        .catch(() => false);
+
+      if (!wroteByDom) {
+        return false;
+      }
+
+      return this.composerHasPrompt(locator, prompt);
+    }
+
+    return false;
+  }
+
+  private async composerHasPrompt(
+    locator: Locator,
+    prompt: string,
+  ): Promise<boolean> {
+    const expected = normalizeComposerValue(prompt);
+    const currentValue = await locator
+      .evaluate((element) => {
+        if (element instanceof HTMLTextAreaElement) {
+          return element.value;
+        }
+
+        if (element instanceof HTMLInputElement) {
+          return element.value;
+        }
+
+        if (element instanceof HTMLElement && element.isContentEditable) {
+          return element.innerText || element.textContent || "";
+        }
+
+        return "";
+      })
+      .catch(() => "");
+
+    return normalizeComposerValue(currentValue) === expected;
   }
 
   private async submitPrompt(page: Page, timeoutMs: number): Promise<void> {
@@ -110,3 +244,6 @@ export class PromptComposer {
   }
 }
 
+function normalizeComposerValue(value: string): string {
+  return value.replace(/\r\n/g, "\n").trim();
+}

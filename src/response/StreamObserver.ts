@@ -3,13 +3,21 @@ import type { Page } from "playwright";
 import type { ResolvedGeminiWebClientOptions } from "../config/defaults";
 import type { GeminiSelectorRegistry } from "../selectors/selectors";
 import type { PromptSubmission } from "../types/internal";
-import type { LoggerLike, StreamChunk } from "../types/public";
+import type {
+  GeminiMediaItem,
+  GeminiResponseKind,
+  LoggerLike,
+  StreamChunk,
+} from "../types/public";
 
 import { GeminiWebError } from "../errors/GeminiWebError";
+import {
+  createEmptyAssistantContentSnapshot,
+  type AssistantContentSnapshot,
+} from "../response/readLatestAssistantContent";
+import { countMatches } from "../selectors/selectors";
 import { Waiters } from "../stability/Waiters";
 import { log } from "../telemetry/Logger";
-
-import { readLatestAssistantText } from "./readLatestAssistantText";
 
 export interface StreamResponseInput {
   submission: PromptSubmission;
@@ -19,6 +27,8 @@ export interface StreamResponseInput {
 
 export interface StreamResponseResult {
   text: string;
+  kind: GeminiResponseKind;
+  media: GeminiMediaItem[];
   completedAt: string;
 }
 
@@ -40,49 +50,64 @@ export class StreamObserver {
     });
 
     const deadline = Date.now() + input.timeoutMs;
-    let lastText = "";
+    let lastSnapshot = createEmptyAssistantContentSnapshot();
     let stableSince = 0;
 
     while (Date.now() <= deadline) {
-      const currentText = await this.readLatestAssistantText(page);
+      const currentSnapshot = await this.readLatestAssistantContent(page);
+      const hasNewAssistantMessage =
+        (await this.readAssistantCount(page)) >
+        input.submission.assistantCountBefore;
 
-      if (currentText !== lastText) {
-        const delta = currentText.startsWith(lastText)
-          ? currentText.slice(lastText.length)
-          : currentText;
+      if (currentSnapshot.signature !== lastSnapshot.signature) {
+        const delta = currentSnapshot.text.startsWith(lastSnapshot.text)
+          ? currentSnapshot.text.slice(lastSnapshot.text.length)
+          : currentSnapshot.text;
 
-        lastText = currentText;
+        lastSnapshot = currentSnapshot;
         stableSince = Date.now();
 
-        input.onChunk({
-          text: currentText,
-          delta,
-          done: false,
-        });
-      } else if (currentText.trim().length > 0 && stableSince === 0) {
+        if (currentSnapshot.hasContent && currentSnapshot.kind) {
+          input.onChunk({
+            text: currentSnapshot.text,
+            delta,
+            done: false,
+            kind: currentSnapshot.kind,
+            media: currentSnapshot.media,
+          });
+        }
+      } else if (currentSnapshot.hasContent && stableSince === 0) {
         stableSince = Date.now();
       }
 
       const inProgress = await this.waiters.isGenerationInProgress(page);
       if (
-        currentText.trim().length > 0 &&
+        hasNewAssistantMessage &&
+        currentSnapshot.hasContent &&
+        currentSnapshot.kind &&
         !inProgress &&
         stableSince > 0 &&
         Date.now() - stableSince >= this.options.stableWindowMs
       ) {
         input.onChunk({
-          text: currentText,
+          text: currentSnapshot.text,
           delta: "",
           done: true,
+          kind: currentSnapshot.kind,
+          media: currentSnapshot.media,
         });
 
         log(this.logger, "info", "response_stream_completed", {
           requestId: input.submission.requestId,
-          textLength: currentText.length,
+          textLength: currentSnapshot.text.length,
+          responseKind: currentSnapshot.kind,
+          mediaCount: currentSnapshot.media.length,
         });
 
         return {
-          text: currentText,
+          text: currentSnapshot.text,
+          kind: currentSnapshot.kind,
+          media: currentSnapshot.media,
           completedAt: new Date().toISOString(),
         };
       }
@@ -97,7 +122,13 @@ export class StreamObserver {
     });
   }
 
-  private async readLatestAssistantText(page: Page): Promise<string> {
-    return readLatestAssistantText(page, this.selectors);
+  private async readLatestAssistantContent(
+    page: Page,
+  ): Promise<AssistantContentSnapshot> {
+    return this.waiters.getLatestAssistantContent(page);
+  }
+
+  private async readAssistantCount(page: Page): Promise<number> {
+    return countMatches(page, this.selectors.assistantMessages);
   }
 }

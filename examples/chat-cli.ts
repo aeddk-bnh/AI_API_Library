@@ -1,7 +1,12 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { ConsoleLogger, createGeminiWebClient } from "../src";
+import {
+  ConsoleLogger,
+  createGeminiWebClient,
+  type GeminiMediaItem,
+  type SendResult,
+} from "../src";
 import {
   readBooleanEnv,
   readNumberEnv,
@@ -13,7 +18,7 @@ async function main(): Promise<void> {
   const streamMode = args.includes("--stream") || readBooleanEnv("GEMINI_STREAM", false);
   const promptFromArgs = args.filter((arg) => !arg.startsWith("--")).join(" ").trim();
   const userDataDir = resolveUserDataDir(".profiles/chat-cli");
-  const timeoutMs = readNumberEnv("GEMINI_TIMEOUT_MS", 90_000);
+  const timeoutMs = readNumberEnv("GEMINI_TIMEOUT_MS", 420_000);
   const headless = readBooleanEnv("GEMINI_HEADLESS", true);
 
   const client = await createGeminiWebClient({
@@ -52,7 +57,7 @@ async function runInteractiveChat(
   let nextPromptStartsNewChat = true;
   let streamMode = options.streamMode;
 
-  printHelp(streamMode);
+  printHelp(streamMode, options.timeoutMs);
 
   try {
     while (true) {
@@ -68,7 +73,7 @@ async function runInteractiveChat(
       }
 
       if (prompt === "/help") {
-        printHelp(streamMode);
+        printHelp(streamMode, options.timeoutMs);
         continue;
       }
 
@@ -114,15 +119,13 @@ async function askOnce(
   if (options.streamMode) {
     let sawChunk = false;
 
-    await client.sendStream(
+    const result = await client.sendStream(
       prompt,
       (chunk) => {
-        if (!chunk.delta) {
-          return;
+        if (chunk.delta) {
+          sawChunk = true;
+          output.write(chunk.delta);
         }
-
-        sawChunk = true;
-        output.write(chunk.delta);
       },
       {
         newChat: options.newChat,
@@ -131,7 +134,13 @@ async function askOnce(
     );
 
     if (!sawChunk) {
-      output.write("(empty response)");
+      output.write(formatResultBody(result));
+    } else if (result.media.length > 0) {
+      output.write(`\n${formatMediaSummary(result.media)}`);
+    }
+
+    if (result.archive?.manifestPath) {
+      output.write(`\nSaved archive: ${result.archive.manifestPath}`);
     }
 
     output.write("\n");
@@ -143,13 +152,18 @@ async function askOnce(
     timeoutMs: options.timeoutMs,
   });
 
-  output.write(`${result.text}\n`);
+  output.write(`${formatResultBody(result)}\n`);
+
+  if (result.archive?.manifestPath) {
+    output.write(`Saved archive: ${result.archive.manifestPath}\n`);
+  }
 }
 
-function printHelp(streamMode: boolean): void {
+function printHelp(streamMode: boolean, timeoutMs: number): void {
   output.write("Gemini CLI is ready.\n");
   output.write("Commands: /new, /stream, /help, /exit\n");
   output.write(`Stream mode: ${streamMode ? "ON" : "OFF"}\n`);
+  output.write(`Timeout: ${timeoutMs}ms (override with GEMINI_TIMEOUT_MS)\n`);
 }
 
 function formatError(error: unknown): string {
@@ -158,6 +172,34 @@ function formatError(error: unknown): string {
   }
 
   return String(error);
+}
+
+function formatResultBody(result: Pick<SendResult, "text" | "media">): string {
+  const text = result.text.trim();
+
+  if (text && result.media.length === 0) {
+    return text;
+  }
+
+  if (text && result.media.length > 0) {
+    return `${text}\n${formatMediaSummary(result.media)}`;
+  }
+
+  if (result.media.length > 0) {
+    return formatMediaSummary(result.media);
+  }
+
+  return "(empty response)";
+}
+
+function formatMediaSummary(media: GeminiMediaItem[]): string {
+  const lines = media.map((item, index) => {
+    const label = `${index + 1}. ${item.kind}`;
+    const url = item.url ?? "(rendered inline)";
+    return `${label}: ${url}`;
+  });
+
+  return lines.join("\n");
 }
 
 main().catch((error) => {

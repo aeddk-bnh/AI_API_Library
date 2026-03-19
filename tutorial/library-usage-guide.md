@@ -78,19 +78,43 @@ const client = await createGeminiWebClient({
 - `stableWindowMs`: khoang on dinh de xac dinh response da xong
 - `maxRetries`: so lan retry bo sung
 - `screenshotsOnError`: chup screenshot khi loi
+- `mediaArchive.enabled`: bat/tat viec luu media response
+- `mediaArchive.directory`: thu muc luu prompt, manifest va media
+- `mediaArchive.downloadMedia`: co tai file image/video ve hay khong
 
 ## Gui 1 prompt
 
 ```ts
 const result = await client.send("Reply with exactly: PONG", {
   newChat: true,
-  timeoutMs: 90_000,
+  timeoutMs: 420_000,
 });
 
 console.log(result.text);
+console.log(result.kind);
+console.log(result.media);
+console.log(result.archive?.manifestPath);
 ```
 
 `newChat: true` rat huu ich khi ban muon request doc lap, tranh bi context cu anh huong.
+
+`send()` hien tra ve response co cau truc:
+
+- `text`: phan text cua Gemini, co the rong neu response chi co media
+- `kind`: `text`, `image`, `video`, hoac `mixed`
+- `media`: danh sach media doc duoc tu DOM cua response cuoi cung
+- `archive`: thong tin noi luu prompt va media neu response co media
+
+Voi request tao anh hoac video, nen de timeout tu `420_000` tro len. Neu tao video mat lau hon, ban co the day len `900_000`.
+
+Khi `result.archive` co gia tri, thu vien da luu:
+
+- `prompt.txt`
+- `response.txt` neu co text
+- `response.html`
+- `response.png`
+- `manifest.json`
+- file image/video tai duoc
 
 ## Stream response
 
@@ -102,12 +126,35 @@ const result = await client.sendStream(
   },
   {
     newChat: true,
-    timeoutMs: 90_000,
+    timeoutMs: 420_000,
   },
 );
 
 console.log("\nFinal:", result.text);
+console.log("Kind:", result.kind);
+console.log("Media:", result.media);
+console.log("Archive:", result.archive?.manifestPath);
 ```
+
+## Luu media response kem prompt
+
+Mac dinh, media response se duoc luu vao `playwright-artifacts/media-responses`.
+
+Neu ban muon cau hinh ro hon:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/my-app",
+  headless: true,
+  mediaArchive: {
+    enabled: true,
+    directory: "./storage/gemini-media",
+    downloadMedia: true,
+  },
+});
+```
+
+Moi response `image`, `video`, hoac `mixed` se tao mot thu muc rieng chua prompt, manifest va cac tep lien quan.
 
 ## Dong client
 
@@ -187,7 +234,7 @@ async function main() {
   try {
     const result = await client.send("Write a one-sentence summary of TCP.", {
       newChat: true,
-      timeoutMs: 90_000,
+      timeoutMs: 420_000,
     });
 
     console.log(result.text);
@@ -219,7 +266,7 @@ app.post("/ask", async (req, res) => {
   try {
     const result = await client.send(req.body.prompt, {
       newChat: true,
-      timeoutMs: 90_000,
+      timeoutMs: 420_000,
     });
 
     res.json(result);

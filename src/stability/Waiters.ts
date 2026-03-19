@@ -7,11 +7,15 @@ import type { LoggerLike } from "../types/public";
 
 import { GeminiWebError } from "../errors/GeminiWebError";
 import {
+  type AssistantContentSnapshot,
+  createEmptyAssistantContentSnapshot,
+  readLatestAssistantContent,
+} from "../response/readLatestAssistantContent";
+import {
   countMatches,
   hasVisibleMatch,
   waitForFirstLocator,
 } from "../selectors/selectors";
-import { readLatestAssistantText } from "../response/readLatestAssistantText";
 import { log } from "../telemetry/Logger";
 
 export interface SubmissionAcceptedInput {
@@ -148,29 +152,40 @@ export class Waiters {
   async waitForAssistantResponseComplete(
     page: Page,
     input: AssistantResponseInput,
-  ): Promise<void> {
+  ): Promise<AssistantContentSnapshot> {
     const deadline = Date.now() + input.timeoutMs;
-    let lastText = "";
+    let lastSignature = "";
     let stableSince = 0;
+    let latestSnapshot = createEmptyAssistantContentSnapshot();
 
     while (Date.now() <= deadline) {
-      const latestText = await this.getLatestAssistantText(page);
+      const assistantCount = await countMatches(
+        page,
+        this.selectors.assistantMessages,
+      );
+      const hasNewAssistantMessage =
+        assistantCount > input.assistantCountBefore;
+      latestSnapshot = hasNewAssistantMessage
+        ? await this.getLatestAssistantContent(page)
+        : createEmptyAssistantContentSnapshot();
       const inProgress = await this.isGenerationInProgress(page);
+      const currentSignature = latestSnapshot.signature;
 
-      if (latestText !== lastText) {
-        lastText = latestText;
+      if (currentSignature !== lastSignature) {
+        lastSignature = currentSignature;
         stableSince = Date.now();
-      } else if (latestText.trim().length > 0 && stableSince === 0) {
+      } else if (latestSnapshot.hasContent && stableSince === 0) {
         stableSince = Date.now();
       }
 
       if (
-        latestText.trim().length > 0 &&
+        hasNewAssistantMessage &&
+        latestSnapshot.hasContent &&
         !inProgress &&
         stableSince > 0 &&
         Date.now() - stableSince >= this.options.stableWindowMs
       ) {
-        return;
+        return latestSnapshot;
       }
 
       await page.waitForTimeout(this.options.pollIntervalMs);
@@ -190,7 +205,9 @@ export class Waiters {
     );
   }
 
-  private async getLatestAssistantText(page: Page): Promise<string> {
-    return readLatestAssistantText(page, this.selectors);
+  async getLatestAssistantContent(
+    page: Page,
+  ): Promise<AssistantContentSnapshot> {
+    return readLatestAssistantContent(page, this.selectors);
   }
 }
