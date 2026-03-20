@@ -30,7 +30,11 @@ export async function readLatestAssistantText(
 }
 
 export function normalizeResponseText(text: string): string {
-  return text.replace(/\r\n/g, "\n").trim();
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/^Gemini said(?:\n+|$)/i, "")
+    .replace(/^Gemini da noi(?:\n+|$)/i, "")
+    .trim();
 }
 
 async function resolveNestedContent(

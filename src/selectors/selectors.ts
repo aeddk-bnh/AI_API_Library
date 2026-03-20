@@ -13,6 +13,8 @@ export interface GeminiSelectorRegistry {
   assistantMessageContents: string[];
   userMessages: string[];
   newChatButton: string[];
+  newChatConfirmButton: string[];
+  newChatCancelButton: string[];
   stopGeneratingButton: string[];
   loadingIndicators: string[];
   blockingOverlays: string[];
@@ -90,6 +92,18 @@ export const defaultSelectors: GeminiSelectorRegistry = {
     'button[aria-label*="new chat" i]',
     'a[aria-label*="new chat" i]',
     'button:has-text("New chat")',
+  ],
+  newChatConfirmButton: [
+    'reset-chat-signed-out-dialog button[data-test-id="confirm-button"]',
+    'mat-dialog-container button[data-test-id="confirm-button"]',
+    'button[data-test-id="confirm-button"]',
+    'button:has-text("New chat")',
+  ],
+  newChatCancelButton: [
+    'reset-chat-signed-out-dialog button[data-test-id="cancel-button"]',
+    'mat-dialog-container button[data-test-id="cancel-button"]',
+    'button[data-test-id="cancel-button"]',
+    'button:has-text("Cancel")',
   ],
   stopGeneratingButton: [
     'button[aria-label="Stop response"]',

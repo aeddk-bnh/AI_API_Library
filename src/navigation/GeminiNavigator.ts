@@ -79,6 +79,7 @@ export class GeminiNavigator {
 
       if (!disabled) {
         await newChatButton.locator.click();
+        await this.confirmSignedOutNewChatIfNeeded(page, timeoutMs);
       }
     } else {
       await this.gotoHome();
@@ -86,6 +87,32 @@ export class GeminiNavigator {
 
     await this.waiters.waitForComposerReady(page, timeoutMs);
     return page;
+  }
+
+  private async confirmSignedOutNewChatIfNeeded(
+    page: Page,
+    timeoutMs: number,
+  ): Promise<void> {
+    const confirmButton = await waitForFirstLocator(
+      page,
+      this.selectors.newChatConfirmButton,
+      {
+        state: "visible",
+        timeoutMs: Math.min(timeoutMs, 3_000),
+        pollIntervalMs: this.options.pollIntervalMs,
+      },
+    );
+
+    if (!confirmButton) {
+      return;
+    }
+
+    await confirmButton.locator.click();
+    await this.waiters.waitForNoBlockingOverlay(page, timeoutMs);
+
+    log(this.logger, "debug", "navigation_new_chat_confirmed", {
+      url: page.url(),
+    });
   }
 }
 

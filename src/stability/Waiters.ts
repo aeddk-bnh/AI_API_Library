@@ -69,9 +69,8 @@ export class Waiters {
         page,
         this.selectors.blockingOverlays,
       );
-      const composerVisible = await hasVisibleMatch(page, this.selectors.composer);
 
-      if (!overlayVisible || composerVisible) {
+      if (!overlayVisible) {
         return;
       }
 

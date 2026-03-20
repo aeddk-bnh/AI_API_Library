@@ -67,7 +67,11 @@ export class StreamDomObserver {
         });
 
         const normalizeResponseText = (value: string): string =>
-          value.replace(/\r\n/g, "\n").trim();
+          value
+            .replace(/\r\n/g, "\n")
+            .replace(/^Gemini said(?:\n+|$)/i, "")
+            .replace(/^Gemini da noi(?:\n+|$)/i, "")
+            .trim();
 
         const classifyResponseKind = (
           text: string,
