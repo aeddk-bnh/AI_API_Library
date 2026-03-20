@@ -1,7 +1,9 @@
 import type { Page } from "playwright";
 import type {
   GeminiModelOption,
+  GeminiSessionInfo,
   GeminiWebClientOptions,
+  SaveAuthStateOptions,
   SendOptions,
   SendResult,
   StreamChunk,
@@ -135,6 +137,34 @@ export class GeminiWebClient {
     });
   }
 
+  async saveAuthState(
+    filePath: string,
+    options?: SaveAuthStateOptions,
+  ): Promise<string> {
+    return this.operationLock.runExclusive(async () => {
+      const page = await this.session.getPage();
+      const auth = await this.authState.check(page);
+
+      if (!auth.ok || auth.mode !== "authenticated") {
+        throw new GeminiWebError("Gemini session is not ready to export auth state", {
+          code: "AUTH_REQUIRED",
+          phase: "auth_check",
+          retryable: false,
+        });
+      }
+
+      return this.session.saveStorageState(
+        filePath,
+        options?.indexedDB ?? this.options.authState.indexedDB,
+      );
+    });
+  }
+
+  async getSessionInfo(): Promise<GeminiSessionInfo | null> {
+    await this.session.open();
+    return this.session.getSessionInfo();
+  }
+
   async send(prompt: string, options?: SendOptions): Promise<SendResult> {
     return this.operationLock.runExclusive(async () => {
       await this.init();
@@ -242,7 +272,8 @@ export class GeminiWebClient {
   private async initializeInternal(): Promise<this> {
     await this.session.open();
     await this.navigator.gotoHome();
-    await this.navigator.ensureReady(this.options.defaultTimeoutMs);
+    const page = await this.navigator.ensureReady(this.options.defaultTimeoutMs);
+    await this.logRestoredGuestStateIfNeeded(page);
     this.initialized = true;
 
     return this;
@@ -410,6 +441,25 @@ export class GeminiWebClient {
     });
 
     return mapped;
+  }
+
+  private async logRestoredGuestStateIfNeeded(page: Page): Promise<void> {
+    const auth = await this.authState.check(page).catch(() => null);
+    if (!auth?.ok || auth.mode !== "guest") {
+      return;
+    }
+
+    if (!this.options.authState.storageStatePath && !this.options.browserConnection.cdpEndpointURL) {
+      return;
+    }
+
+    const sessionInfo = this.session.getSessionInfo();
+
+    log(this.options.logger, "warn", "auth_restored_as_guest", {
+      sessionInfo,
+      storageStatePath: this.options.authState.storageStatePath,
+      cdpEndpointURL: this.options.browserConnection.cdpEndpointURL,
+    });
   }
 }
 

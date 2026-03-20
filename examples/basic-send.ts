@@ -4,11 +4,19 @@ import { readBooleanEnv, readStringEnv, resolveUserDataDir } from "./helpers";
 async function main(): Promise<void> {
   const userDataDir = resolveUserDataDir(".profiles/guest");
   const model = readStringEnv("GEMINI_MODEL", "");
+  const cdpEndpointURL = readStringEnv("GEMINI_CDP_ENDPOINT_URL", "");
+  const storageStatePath = readStringEnv("GEMINI_STORAGE_STATE_PATH", "");
 
   const client = await createGeminiWebClient({
     userDataDir,
     headless: readBooleanEnv("GEMINI_HEADLESS", true),
     logger: new ConsoleLogger(),
+    ...(cdpEndpointURL
+      ? { browserConnection: { cdpEndpointURL } }
+      : {}),
+    ...(storageStatePath
+      ? { authState: { storageStatePath } }
+      : {}),
   });
 
   try {

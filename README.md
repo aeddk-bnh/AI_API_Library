@@ -8,6 +8,7 @@ Huong di cua project la:
 
 - Dieu khien trinh duyet that, khong phu thuoc vao Gemini API chinh thuc.
 - Tai su dung session dang nhap Google bang `persistent browser profile`.
+- Ho tro them `storage state` va `CDP attach` de giam so lan phai login lai.
 - Dong goi thanh mot thu vien co API de su dung lai trong script, ung dung backend, hoac cong cu tu dong hoa.
 
 Project nay uu tien:
@@ -40,7 +41,14 @@ npm run chat
 
 ```bash
 set GEMINI_USER_DATA_DIR=.profiles/default
-set GEMINI_BROWSER_CHANNEL=chrome
+npm run bootstrap:login
+```
+
+Hoac attach vao browser he thong dang mo san qua CDP, sau do luu ra `storage state`:
+
+```bash
+set GEMINI_CDP_ENDPOINT_URL=http://127.0.0.1:9222
+set GEMINI_STORAGE_STATE_PATH=.auth/gemini.json
 npm run bootstrap:login
 ```
 
@@ -137,6 +145,28 @@ export interface GeminiWebClientOptions {
   stableWindowMs?: number;
   maxRetries?: number;
   screenshotsOnError?: boolean;
+  browserConnection?: {
+    cdpEndpointURL?: string;
+    headers?: Record<string, string>;
+    timeoutMs?: number;
+  };
+  authState?: {
+    storageStatePath?: string;
+    indexedDB?: boolean;
+  };
+  stealth?: {
+    enabled?: boolean;
+    usePlugin?: boolean;
+    recycleInitialPages?: boolean;
+    stripAutomationFlags?: boolean;
+    webdriverFallback?: boolean;
+    locale?: string;
+    languages?: string[];
+    timezoneId?: string;
+    userAgent?: string;
+    launchArgs?: string[];
+    ignoreDefaultArgs?: string[];
+  };
   mediaArchive?: {
     enabled?: boolean;
     directory?: string;
@@ -213,6 +243,9 @@ Vi du su dung:
 const client = await createGeminiWebClient({
   userDataDir: "./.profiles/default",
   headless: false,
+  authState: {
+    storageStatePath: "./.auth/gemini.json",
+  },
 });
 
 const result = await client.send("Tom tat bai viet nay");
@@ -222,6 +255,41 @@ console.log(result.media);
 console.log(result.archive?.manifestPath);
 
 await client.close();
+```
+
+Attach vao browser he thong dang mo san qua CDP:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/unused",
+  browserConnection: {
+    cdpEndpointURL: "http://127.0.0.1:9222",
+  },
+});
+```
+
+Export auth state de dung lai o cac lan chay sau:
+
+```ts
+const savedPath = await client.saveAuthState("./.auth/gemini.json", {
+  indexedDB: true,
+});
+
+console.log(savedPath);
+```
+
+Neu muon bat best-effort stealth cho browser session:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/default",
+  headless: false,
+  stealth: {
+    enabled: true,
+    locale: "en-US",
+    languages: ["en-US", "en"],
+  },
+});
 ```
 
 Neu muon chon model truoc khi gui prompt:
@@ -270,7 +338,8 @@ const client = await createGeminiWebClient({
 - `npm run build`: build ra `dist/`.
 - `npm run smoke`: build va chay vi du co ban.
 - `npm run chat`: chat voi Gemini tu terminal.
-- `npm run bootstrap:login`: mo browser headful va doi dang nhap Google thu cong.
+- `npm run bootstrap:login`: mo browser headful va doi dang nhap Google thu cong, mac dinh thu bundled Chromium + stealth.
+- `npm run auth:save`: luu `storage state` tu session hien tai ra file JSON.
 - `npm run inspect:dom`: gui mot probe prompt va luu DOM report/HTML snapshot.
 - `npm run test:integration`: chay integration test that voi Gemini web.
 
@@ -279,10 +348,46 @@ Bien moi truong:
 - `GEMINI_USER_DATA_DIR`: thu muc profile Playwright/Chromium da dang nhap.
 - `GEMINI_HEADLESS`: `true/false` cho example scripts.
 - `GEMINI_MODEL`: model mac dinh cho `basic-send` va `chat-cli`, vi du `fast`, `thinking`, `pro`.
-- `GEMINI_BROWSER_CHANNEL`: browser channel cho login/bootstrap, nen uu tien `chrome`.
+- `GEMINI_CDP_ENDPOINT_URL`: attach vao browser Chromium dang mo san qua CDP, vi du `http://127.0.0.1:9222`.
+- `GEMINI_STORAGE_STATE_PATH`: file `storage state` de luu hoac tai auth state.
+- `GEMINI_STORAGE_STATE_INDEXED_DB`: `true/false`, mac dinh `true`, de gom ca IndexedDB khi export auth state.
+- `GEMINI_BROWSER_CHANNEL`: browser channel tuy chon cho login/bootstrap, vi du `chrome`, `msedge`.
 - `GEMINI_PROBE_PROMPT`: prompt dung cho `inspect:dom`.
 - `GEMINI_BOOTSTRAP_TIMEOUT_MS`: timeout cho bootstrap login.
+- `GEMINI_STEALTH`: `true/false`, mac dinh `true` trong `bootstrap:login`.
+- `GEMINI_STEALTH_LOCALE`: vi du `en-US`.
+- `GEMINI_STEALTH_LANGUAGES`: vi du `en-US,en`.
+- `GEMINI_STEALTH_TIMEZONE_ID`: vi du `Asia/Saigon`.
+- `GEMINI_STEALTH_USER_AGENT`: user agent tuy chon.
 - `RUN_GEMINI_WEB_TESTS=1`: bat integration tests that.
+
+## Ghi chu ve stealth
+
+Stealth trong repo nay la huong `best-effort`:
+
+- dung `playwright-extra` + `puppeteer-extra-plugin-stealth`
+- bo qua `--enable-automation`
+- them `AutomationControlled`
+- recycle page dau tien trong persistent context de cac evasion duoc ap dung dung cach
+
+No co the giup giam dau vet automation, nhung khong co gi dam bao Google se cho phep dang nhap. Neu Google doi rule, flow nay van co the bi chan.
+
+## Huong auth nen dung
+
+Neu Google tu choi login trong browser do Playwright tu mo, flow on dinh hon la:
+
+1. Mo Chrome/Edge that voi `--remote-debugging-port=9222`
+2. Dang nhap Gemini thu cong trong browser do
+3. Chay `npm run bootstrap:login` hoac `npm run auth:save` voi `GEMINI_CDP_ENDPOINT_URL`
+4. Dung `GEMINI_STORAGE_STATE_PATH` cho `npm run chat`, `npm run smoke`, hoac app cua ban
+
+Flow nay tranh duoc man hinh login Google bi anti-automation chan, nhung van cho thu vien tai su dung auth state ve sau.
+
+Luu y:
+
+- `storage state` la cach tai su dung session, khong phai backup dang nhap vinh vien
+- neu ban `logout` sau khi export auth state, file da luu co the chi khoi phuc duoc `guest mode`
+- neu `GEMINI_CDP_ENDPOINT_URL` van ton tai trong PowerShell, CLI se thu CDP truoc; hay xoa env nay neu ban chi muon dung `storage state`
 
 ## Cau truc thu muc de xuat
 

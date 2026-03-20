@@ -6,6 +6,7 @@ import {
   createGeminiWebClient,
   type GeminiMediaItem,
   type GeminiModelOption,
+  type GeminiSessionInfo,
   type SendResult,
 } from "../src";
 import {
@@ -23,12 +24,21 @@ async function main(): Promise<void> {
   const timeoutMs = readNumberEnv("GEMINI_TIMEOUT_MS", 420_000);
   const headless = readBooleanEnv("GEMINI_HEADLESS", true);
   const model = readStringEnv("GEMINI_MODEL", "");
+  const cdpEndpointURL = readStringEnv("GEMINI_CDP_ENDPOINT_URL", "");
+  const storageStatePath = readStringEnv("GEMINI_STORAGE_STATE_PATH", "");
 
   const client = await createGeminiWebClient({
     userDataDir,
     headless,
     logger: new ConsoleLogger(),
+    ...(cdpEndpointURL
+      ? { browserConnection: { cdpEndpointURL } }
+      : {}),
+    ...(storageStatePath
+      ? { authState: { storageStatePath } }
+      : {}),
   });
+  const sessionInfo = await client.getSessionInfo();
 
   try {
     if (promptFromArgs) {
@@ -45,6 +55,12 @@ async function main(): Promise<void> {
       streamMode,
       timeoutMs,
       ...(model ? { model } : {}),
+      sessionSource: describeSessionSource(
+        sessionInfo,
+        cdpEndpointURL,
+        storageStatePath,
+        userDataDir,
+      ),
     });
   } finally {
     await client.close();
@@ -57,6 +73,7 @@ async function runInteractiveChat(
     streamMode: boolean;
     timeoutMs: number;
     model?: string;
+    sessionSource: string;
   },
 ): Promise<void> {
   const readline = createInterface({ input, output });
@@ -64,7 +81,7 @@ async function runInteractiveChat(
   let streamMode = options.streamMode;
   let selectedModel = options.model;
 
-  printHelp(streamMode, options.timeoutMs, selectedModel);
+  printHelp(streamMode, options.timeoutMs, selectedModel, options.sessionSource);
 
   try {
     while (true) {
@@ -80,7 +97,7 @@ async function runInteractiveChat(
       }
 
       if (prompt === "/help") {
-        printHelp(streamMode, options.timeoutMs, selectedModel);
+        printHelp(streamMode, options.timeoutMs, selectedModel, options.sessionSource);
         continue;
       }
 
@@ -204,11 +221,13 @@ function printHelp(
   streamMode: boolean,
   timeoutMs: number,
   selectedModel?: string,
+  sessionSource?: string,
 ): void {
   output.write("Gemini CLI is ready.\n");
   output.write("Commands: /new, /stream, /models, /model, /help, /exit\n");
   output.write(`Stream mode: ${streamMode ? "ON" : "OFF"}\n`);
   output.write(`Model: ${selectedModel ?? "(current Gemini default)"}\n`);
+  output.write(`Session: ${sessionSource ?? "(persistent profile)"}\n`);
   output.write(`Timeout: ${timeoutMs}ms (override with GEMINI_TIMEOUT_MS)\n`);
 }
 
@@ -264,6 +283,38 @@ function formatModelList(models: GeminiModelOption[]): string {
       return `${model.label} (${model.id}) [${status}]${description}`;
     })
     .join("\n");
+}
+
+function describeSessionSource(
+  sessionInfo: GeminiSessionInfo | null,
+  cdpEndpointURL: string,
+  storageStatePath: string,
+  userDataDir: string,
+): string {
+  if (sessionInfo?.mode === "cdp-browser") {
+    return `CDP attach (${sessionInfo.cdpEndpointURL ?? cdpEndpointURL})`;
+  }
+
+  if (sessionInfo?.mode === "storage-state") {
+    const label = sessionInfo.storageStatePath ?? storageStatePath;
+    return sessionInfo.fallbackFromCdp
+      ? `storage state (${label}, fallback from CDP)`
+      : `storage state (${label})`;
+  }
+
+  if (sessionInfo?.mode === "persistent-context") {
+    return `persistent profile (${sessionInfo.userDataDir ?? userDataDir})`;
+  }
+
+  if (cdpEndpointURL) {
+    return `CDP attach (${cdpEndpointURL})`;
+  }
+
+  if (storageStatePath) {
+    return `storage state (${storageStatePath})`;
+  }
+
+  return `persistent profile (${userDataDir})`;
 }
 
 main().catch((error) => {

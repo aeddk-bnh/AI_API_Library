@@ -21,6 +21,10 @@ Trong trang thai hien tai, thu vien da dung duoc cho:
 - `sendStream()`
 - `listModels()`
 - `selectModel()`
+- `saveAuthState()`
+- `storage state` import
+- `CDP attach` vao browser he thong dang mo san
+- `stealth` cho browser session
 - chat terminal example
 - bootstrap login thu cong de tao profile dang nhap that
 
@@ -74,7 +78,13 @@ const client = await createGeminiWebClient({
 ### Y nghia cac option quan trong
 
 - `userDataDir`: thu muc profile browser se duoc tai su dung
+- `browserConnection.cdpEndpointURL`: attach vao Chrome/Edge dang mo san qua CDP
+- `authState.storageStatePath`: nap auth state tu file JSON
+- `authState.indexedDB`: co luu/phuc hoi them IndexedDB hay khong
 - `headless`: `true` cho automation/service, `false` khi debug
+- `stealth.enabled`: bat best-effort stealth strategy
+- `stealth.usePlugin`: dung `playwright-extra` + stealth plugin
+- `stealth.locale`, `stealth.languages`, `stealth.timezoneId`, `stealth.userAgent`: tinh chinh fingerprint co kiem soat
 - `defaultTimeoutMs`: timeout mac dinh cho moi request
 - `pollIntervalMs`: tan suat poll DOM
 - `stableWindowMs`: khoang on dinh de xac dinh response da xong
@@ -83,6 +93,130 @@ const client = await createGeminiWebClient({
 - `mediaArchive.enabled`: bat/tat viec luu media response
 - `mediaArchive.directory`: thu muc luu prompt, manifest va media
 - `mediaArchive.downloadMedia`: co tai file image/video ve hay khong
+
+## Dung stealth
+
+Neu ban muon browser session giam bot dau vet automation ro rang:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/default",
+  headless: false,
+  stealth: {
+    enabled: true,
+    locale: "en-US",
+    languages: ["en-US", "en"],
+    timezoneId: "Asia/Saigon",
+  },
+});
+```
+
+Stealth hien tai gom:
+
+- `playwright-extra`
+- `puppeteer-extra-plugin-stealth`
+- bo `--enable-automation`
+- them `--disable-blink-features=AutomationControlled`
+- recycle page dau tien trong persistent context
+
+Luu y:
+
+- day la `best-effort`, khong co dam bao Google se luon cho dang nhap
+- neu login van bi chan, thu Edge channel hoac browser that qua CDP van la fallback an toan hon
+
+## Dung auth state va CDP attach
+
+Neu Google khong cho login trong browser do Playwright mo, flow nen dung la:
+
+1. mo Chrome/Edge that voi remote debugging port
+2. dang nhap Gemini thu cong trong browser do
+3. attach thu vien vao browser dang mo qua `browserConnection.cdpEndpointURL`
+4. export auth state ra file JSON
+5. cac lan sau chi can nap `authState.storageStatePath`
+
+Vi du attach vao browser he thong dang mo san:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/unused",
+  browserConnection: {
+    cdpEndpointURL: "http://127.0.0.1:9222",
+  },
+});
+```
+
+Vi du nap auth state tu file:
+
+```ts
+const client = await createGeminiWebClient({
+  userDataDir: "./.profiles/runtime",
+  headless: true,
+  authState: {
+    storageStatePath: "./.auth/gemini.json",
+    indexedDB: true,
+  },
+});
+```
+
+Luu y:
+
+- `userDataDir` van la field bat buoc cua public API hien tai, nhung trong `CDP attach` va `storage state` mode no chi dong vai tro scratch path de tuong thich nguoc
+- `storageState` import la huong tai su dung auth, khong phai tu dong dang nhap Google
+- neu ban `logout` khoi Google/Gemini sau khi da `saveAuthState()`, file `storage state` cu thuong se mat hieu luc va session co the chi duoc khoi phuc o `guest mode`
+- `storage state` nen duoc xem la cach tai su dung session hien tai, khong phai backup dang nhap vinh vien
+
+De export auth state:
+
+```ts
+const savedPath = await client.saveAuthState("./.auth/gemini.json", {
+  indexedDB: true,
+});
+
+console.log(savedPath);
+```
+
+## Cac tinh huong de nham
+
+### 1. `chat` van vao guest du da co `gemini.json`
+
+Thuong co 1 trong 3 ly do:
+
+- ban da `logout` sau khi export auth state, nen token/session phia server khong con hop le
+- file `storage state` da cu, bi revoke, hoac khong dung cho tai khoan/session hien tai
+- Gemini web tu choi khoi phuc auth va day ve signed-out shell
+
+Luu y:
+
+- `storage state` khong dam bao giu duoc authenticated mode sau khi logout
+- khi dieu nay xay ra, thu vien van co the mo duoc Gemini nhung se vao `guest`
+
+### 2. `chat` van co gang attach CDP du ban chi muon dung `storage state`
+
+Trong PowerShell, env var co the con song tu lenh truoc do. Neu `GEMINI_CDP_ENDPOINT_URL` van ton tai, CLI se uu tien thu CDP truoc.
+
+De xoa:
+
+```powershell
+Remove-Item Env:GEMINI_CDP_ENDPOINT_URL -ErrorAction SilentlyContinue
+```
+
+Sau do moi chay:
+
+```powershell
+$env:GEMINI_STORAGE_STATE_PATH='.auth/gemini.json'
+npm run chat
+```
+
+### 3. `chat` bao `Session: ...` khong dung voi nhung gi da xay ra
+
+Ban moi cua CLI da in `session source` theo mode thuc te:
+
+- `CDP attach (...)`
+- `storage state (...)`
+- `storage state (..., fallback from CDP)`
+- `persistent profile (...)`
+
+Neu CDP attach that bai va client roi ve `storage state`, CLI se hien ro dieu do.
 
 ## Gui 1 prompt
 
@@ -250,13 +384,43 @@ Neu ban muon su dung session dang nhap Google that:
 
 ```bash
 set GEMINI_USER_DATA_DIR=.profiles/default
-set GEMINI_BROWSER_CHANNEL=chrome
 npm run bootstrap:login
 ```
 
 Sau khi login xong, app cua ban chi can tro den cung `userDataDir`.
 
-De giam rui ro bi Google chan sign-in trong flow bootstrap, nen uu tien Google Chrome channel thay vi Chromium bundle khi dang nhap that.
+`bootstrap:login` hien mac dinh bat stealth tren bundled Chromium. Neu ban muon doi:
+
+```bash
+set GEMINI_BROWSER_CHANNEL=msedge
+set GEMINI_STEALTH=true
+set GEMINI_STEALTH_LOCALE=en-US
+set GEMINI_STEALTH_LANGUAGES=en-US,en
+npm run bootstrap:login
+```
+
+Neu ban muon attach vao browser he thong dang mo san va luu auth state ngay:
+
+```bash
+set GEMINI_CDP_ENDPOINT_URL=http://127.0.0.1:9222
+set GEMINI_STORAGE_STATE_PATH=.auth/gemini.json
+npm run bootstrap:login
+```
+
+Hoac chi export auth state tu session hien tai:
+
+```bash
+set GEMINI_STORAGE_STATE_PATH=.auth/gemini.json
+npm run auth:save
+```
+
+Neu ban muon chat bang auth state vua luu ma khong dung CDP nua:
+
+```powershell
+Remove-Item Env:GEMINI_CDP_ENDPOINT_URL -ErrorAction SilentlyContinue
+$env:GEMINI_STORAGE_STATE_PATH='.auth/gemini.json'
+npm run chat
+```
 
 ## Example cho script don gian
 
@@ -401,6 +565,7 @@ Nen can nhac nhieu client/profile khi:
 npm run smoke
 npm run chat
 npm run bootstrap:login
+npm run auth:save
 npm run inspect:dom
 ```
 

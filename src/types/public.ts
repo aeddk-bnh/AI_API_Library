@@ -1,4 +1,4 @@
-import type { BrowserType } from "playwright";
+import type { BrowserType, ViewportSize } from "playwright";
 
 export interface LoggerContext {
   [key: string]: unknown;
@@ -22,11 +22,45 @@ export interface GeminiWebClientOptions {
   screenshotsOnError?: boolean;
   artifactsDir?: string;
   mediaArchive?: GeminiMediaArchiveOptions;
+  browserConnection?: GeminiBrowserConnectionOptions;
+  authState?: GeminiAuthStateOptions;
+  stealth?: GeminiStealthOptions;
   logger?: LoggerLike;
   launchOptions?: Omit<
     Exclude<Parameters<BrowserType["launchPersistentContext"]>[1], undefined>,
     "headless"
   >;
+}
+
+export interface GeminiBrowserConnectionOptions {
+  cdpEndpointURL?: string;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export interface GeminiAuthStateOptions {
+  storageStatePath?: string;
+  indexedDB?: boolean;
+}
+
+export interface GeminiStealthOptions {
+  enabled?: boolean;
+  usePlugin?: boolean;
+  recycleInitialPages?: boolean;
+  stripAutomationFlags?: boolean;
+  webdriverFallback?: boolean;
+  locale?: string;
+  languages?: string[];
+  timezoneId?: string;
+  userAgent?: string;
+  maskLinux?: boolean;
+  viewport?: ViewportSize | null;
+  screen?: ViewportSize;
+  extraHTTPHeaders?: Record<string, string>;
+  launchArgs?: string[];
+  ignoreDefaultArgs?: string[];
+  enabledEvasions?: string[];
+  disabledEvasions?: string[];
 }
 
 export interface SendOptions {
@@ -39,6 +73,7 @@ export type GeminiResponseKind = "text" | "image" | "video" | "mixed";
 export type GeminiMediaKind = "image" | "video";
 export type GeminiMediaRenderer = "element" | "canvas";
 export type GeminiKnownModelId = "fast" | "thinking" | "pro";
+export type GeminiSessionMode = "persistent-context" | "storage-state" | "cdp-browser";
 
 export interface GeminiModelOption {
   id: string;
@@ -82,6 +117,20 @@ export interface GeminiMediaArchiveRecord {
   responseHtmlPath: string | null;
   responseScreenshotPath: string | null;
   mediaFiles: GeminiArchivedMediaFile[];
+}
+
+export interface SaveAuthStateOptions {
+  indexedDB?: boolean;
+}
+
+export interface GeminiSessionInfo {
+  mode: GeminiSessionMode;
+  headless: boolean;
+  stealth: boolean;
+  fallbackFromCdp: boolean;
+  userDataDir?: string;
+  storageStatePath?: string;
+  cdpEndpointURL?: string;
 }
 
 export interface SendResult {
